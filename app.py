@@ -8,8 +8,8 @@ import os
 
 app = Flask(__name__)
 
-BOT_TOKEN = "ใส่ TOKEN ของคุณ"
-CHAT_ID = "ใส่ CHAT ID ของคุณ"
+BOT_TOKEN = "7939869219:AAE3f92rtma1w549m4qiWbqm6W3e0JcT2Tk"
+CHAT_ID = "5134209145"
 
 model = joblib.load("xgb_model.pkl")
 
