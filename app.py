@@ -1,68 +1,49 @@
-import os
-import threading
-import time
-import requests
-import pandas as pd
-import joblib
 from flask import Flask, jsonify
+import yfinance as yf
+import pandas as pd
+import ta
+import joblib
+import requests
+import os
 
-# ========== CONFIG ==========
-BOT_TOKEN = "7939869219:AAE3f92rtma1w549m4qiWbqm6W3e0JcT2Tk"
-CHAT_ID = "5134209145"
-MODEL_PATH = "xgb_model.pkl"
-DATA_PATH = "xauusd_ready.csv"
-FETCH_INTERVAL = 60  # วิเคราะห์ทุก 60 วินาที
-
-# ========== FLASK SETUP ==========
 app = Flask(__name__)
-model = None
-X = None
 
-# ========== LOAD MODEL ==========
-try:
-    model = joblib.load(MODEL_PATH)
-except Exception as e:
-    model = None
-    print(f"❌ Error loading model: {e}")
+BOT_TOKEN = "ใส่ TOKEN ของคุณ"
+CHAT_ID = "ใส่ CHAT ID ของคุณ"
 
-# ========== AI ANALYSIS FUNCTION ==========
-def analyze_and_send():
-    while True:
-        try:
-            df = pd.read_csv(DATA_PATH)
-            X = df.drop(columns=['target', 'Price'])
-            prediction = model.predict(X)
-            signal = int(prediction[-1])
-            msg = f"📢 AI Signal: {'BUY' if signal == 1 else 'SELL'} (index: {len(prediction)-1})"
-            print(msg)
-            send_telegram(msg)
-        except Exception as e:
-            print(f"❌ Error during prediction: {e}")
+model = joblib.load("xgb_model.pkl")
 
-        time.sleep(FETCH_INTERVAL)
+def fetch_realtime_data():
+    data = yf.download("XAUUSD=X", period="5d", interval="1h")
+    df = data.copy()
+    df['EMA20'] = ta.trend.ema_indicator(df['Close'], window=20)
+    df['EMA50'] = ta.trend.ema_indicator(df['Close'], window=50)
+    df['RSI'] = ta.momentum.rsi(df['Close'], window=14)
+    macd = ta.trend.macd(df['Close'])
+    df['MACD'] = macd.macd_diff()
+    df = df.dropna()
+    return df
 
-# ========== TELEGRAM FUNCTION ==========
-def send_telegram(message):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": message}
-    try:
-        requests.post(url, json=payload)
-    except Exception as e:
-        print(f"❌ Failed to send Telegram message: {e}")
-
-# ========== FLASK ROUTE ==========
 @app.route('/')
-def home():
-    return jsonify({"status": "✅ AI Signal Server Running"})
+def ai_signal():
+    try:
+        df = fetch_realtime_data()
+        latest = df.iloc[-1:]
+        X = latest[['EMA20', 'EMA50', 'RSI', 'MACD']]
+        prediction = model.predict(X)[0]
+        signal = "BUY" if prediction == 1 else "SELL"
+        msg = f"🔔 AI Signal: {signal}\nPrice: {latest['Close'].values[0]:.2f}"
 
-# ========== BACKGROUND THREAD ==========
-def start_background():
-    thread = threading.Thread(target=analyze_and_send)
-    thread.daemon = True
-    thread.start()
+        # ส่งไป Telegram
+        requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", params={
+            "chat_id": CHAT_ID,
+            "text": msg
+        })
 
-# ========== RUN ==========
+        return jsonify({"signal": signal})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
 if __name__ == '__main__':
-    start_background()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
