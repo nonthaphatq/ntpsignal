@@ -29,6 +29,17 @@ def home():
     except Exception as e:
         return jsonify({"error": str(e)})
 
+@app.route('/signal')
+def signal_only():
+    if model is None:
+        return "ERROR"
+    try:
+        prediction = model.predict(X)
+        signal = int(prediction[-1])
+        return "BUY" if signal == 1 else "SELL"
+    except Exception as e:
+        return "ERROR"
+
 # รันบน 0.0.0.0 และใช้ PORT จาก Render
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
